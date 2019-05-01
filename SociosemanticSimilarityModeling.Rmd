@@ -1,0 +1,85 @@
+---
+title: "SociosemanticSimilarityModeling"
+author: "Jean-Francois Chartier"
+date: "1 mai 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#read data
+```{r}
+agent.enron = readRDS("agent.enron.rds")
+content.enron=readRDS("content.enron.rds")
+interaction.enron=readRDS("interaction.enron.rds")  
+```
+
+#Aggregate contents by sender 
+```{r}
+idContentBySender=stats::aggregate(interaction.enron, by=list(interaction.enron$id.sender), FUN=function(x){unique(c(x))}) 
+#%>%set_colnames(c("id.sender", "list.idContent"))
+
+tokensBySender=lapply(idContentBySender$id.content, function(l){
+  
+  c(content.enron$clean.content.token[unlist(l)])%>%unlist(.)
+})
+
+
+```
+
+#Get number of messages sent by agent
+```{r}
+sender.freq.feature=apply(idContentBySender, MARGIN = 1, function(x){
+  data.frame(agent.id=x$id.sender, n.message=length(x$id.content), n.receiver=length(x$id.receiver))
+  })%>%data.table::rbindlist(.)
+```
+
+
+#Build document*term matrix
+```{r}
+#need to encode as quanteda's tokens format before building the matrix
+sender.term.matrix = quanteda::dfm(x=as.tokens(tokensBySender), tolower=FALSE)
+
+print(c("vocabulary size:" ))
+length(sender.term.matrix@Dimnames$features)
+```
+##filter too rare and too frequent words
+```{r}
+#threshold set in order to have a matrix of size that fit in the RAM
+#a matrix with more than 25k dimensions is vera hard to handle
+min.thres=30
+max.thres=length(sender.term.matrix@Dimnames$features)*.5
+sender.term.matrix.2=quanteda::dfm_trim(x=sender.term.matrix, min_docfreq = min.thres, max_docfreq = max.thres, docfreq_type="count")
+print(c("vocabulary size:" ))
+length(sender.term.matrix.2@Dimnames$features)
+
+#change doc feature by id.sender for further convenient retrieval 
+sender.term.matrix.2@Dimnames$docs=idContentBySender$id.sender
+```
+
+#get non-empty context vector
+empty vector can not be used in some semantic model. Therefore they must be filtered out
+```{r}
+nonEmptyVectors = apply(X = as.matrix(sender.term.matrix.2), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
+
+print(paste("how many empty vectors: ", length(matrixContextWord@Dimnames$docs[!nonEmptyVectors])))
+
+sender.term.matrix.2=sender.term.matrix.2[nonEmptyVectors,]
+```
+
+#Binary based similarity analysis between members
+
+```{r}
+sender.term.matrix.bin  = quanteda::dfm_weight(sender.term.matrix.2, scheme  = "boolean")
+#compute similarities between members
+bin_simil_members=proxy::simil(x=as.matrix(sender.term.matrix.bin), by_rows=T, method="Jaccard", convert_distances = FALSE, diag = T)
+#View(as.matrix(bin_simil_members))
+bin_simil_members=as.matrix(bin_simil_members)
+save(bin_simil_members, file = "enron.binary.sim.model.rds")
+
+```
+
