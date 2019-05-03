@@ -11,6 +11,17 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+#Load packages
+```{r}
+library(magrittr)
+library(quanteda)
+quanteda::quanteda_options("threads" = 6)
+library(data.table)
+library(proxy)
+
+```
+
+
 #read data
 ```{r}
 agent.enron = readRDS("agent.enron.rds")
@@ -20,8 +31,20 @@ interaction.enron=readRDS("interaction.enron.rds")
 
 #Aggregate contents by sender 
 ```{r}
-idContentBySender=stats::aggregate(interaction.enron, by=list(interaction.enron$id.sender), FUN=function(x){unique(c(x))}) 
-#%>%set_colnames(c("id.sender", "list.idContent"))
+# idContentBySender=stats::aggregate(interaction.enron, by=list(interaction.enron$id.sender), FUN=function(x){unique(c(x))}) 
+# #%>%set_colnames(c("id.sender", "list.idContent"))
+# 
+# tokensBySender=lapply(idContentBySender$id.content, function(l){
+#   
+#   c(content.enron$clean.content.token[unlist(l)])%>%unlist(.)
+# })
+
+
+```
+
+```{r}
+map.content.sender=unique(interaction.enron[,1:2])
+idContentBySender=stats::aggregate(map.content.sender, by=list(map.content.sender$id.sender), FUN=function(x){unique(c(x))}) 
 
 tokensBySender=lapply(idContentBySender$id.content, function(l){
   
@@ -31,15 +54,19 @@ tokensBySender=lapply(idContentBySender$id.content, function(l){
 
 ```
 
+
+
 #Get number of messages sent by agent
+not used
 ```{r}
-sender.freq.feature=apply(idContentBySender, MARGIN = 1, function(x){
-  data.frame(agent.id=x$id.sender, n.message=length(x$id.content), n.receiver=length(x$id.receiver))
-  })%>%data.table::rbindlist(.)
+# sender.freq.feature=apply(idContentBySender, MARGIN = 1, function(x){
+#   data.frame(agent.id=x$id.sender, n.message=length(x$id.content), n.receiver=length(x$id.receiver))
+#   })%>%data.table::rbindlist(.)
 ```
 
+#Sociosemantic modeling
 
-#Build document*term matrix
+##Build basic document*term frequency matrix
 ```{r}
 #need to encode as quanteda's tokens format before building the matrix
 sender.term.matrix = quanteda::dfm(x=as.tokens(tokensBySender), tolower=FALSE)
@@ -50,8 +77,8 @@ length(sender.term.matrix@Dimnames$features)
 ##filter too rare and too frequent words
 ```{r}
 #threshold set in order to have a matrix of size that fit in the RAM
-#a matrix with more than 25k dimensions is vera hard to handle
-min.thres=30
+#a matrix with more than 20k dimensions is very hard to handle
+min.thres=20
 max.thres=length(sender.term.matrix@Dimnames$features)*.5
 sender.term.matrix.2=quanteda::dfm_trim(x=sender.term.matrix, min_docfreq = min.thres, max_docfreq = max.thres, docfreq_type="count")
 print(c("vocabulary size:" ))
@@ -61,25 +88,160 @@ length(sender.term.matrix.2@Dimnames$features)
 sender.term.matrix.2@Dimnames$docs=idContentBySender$id.sender
 ```
 
-#get non-empty context vector
+##get non-empty context vector
 empty vector can not be used in some semantic model. Therefore they must be filtered out
 ```{r}
 nonEmptyVectors = apply(X = as.matrix(sender.term.matrix.2), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
 
-print(paste("how many empty vectors: ", length(matrixContextWord@Dimnames$docs[!nonEmptyVectors])))
+print(paste("how many empty vectors: ", length(sender.term.matrix.2@Dimnames$docs[!nonEmptyVectors])))
 
-sender.term.matrix.2=sender.term.matrix.2[nonEmptyVectors,]
 ```
 
-#Binary based similarity analysis between members
+##Add dummy
+if the matrix has empty vectors, add un dummy variable
+```{r}
+dummy=data.frame(dummy.feature=c(rep(1, nrow(sender.term.matrix.2))))
+
+sender.term.matrix.3=sender.term.matrix.2%>%as.matrix(.)%>%cbind(., dummy)%>%as.dfm(.)
+
+nonEmptyVectors.3 = apply(X = as.matrix(sender.term.matrix.3), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
+print(paste("how many non empty vectors: ", nrow(sender.term.matrix.3[nonEmptyVectors.3,])))
+
+```
+
+
+#Explicit Semantic Modeling
+
+<!-- ##Function for Jaccard -->
+<!-- ```{r} -->
+<!-- jaccard_similarity <- function(m) { -->
+<!--   A <- Matrix::tcrossprod(m) -->
+<!--   im <- which(A > 0, arr.ind=TRUE, useNames = F) -->
+<!--   b <- rowSums(m) -->
+<!--   Aim <- A[im] -->
+<!--   sparseMatrix( -->
+<!--     i = im[,1], -->
+<!--     j = im[,2], -->
+<!--     x = Aim / (b[im[,1]] + b[im[,2]] - Aim), -->
+<!--     dims = dim(A) -->
+<!--   ) -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+##Binary similarity modeling
+the binary similarity is computed with the Jaccard coefficient
+use sim2 from text2vec. The fastest similarity computation found so far.
+Much more faster than the package proxy
 
 ```{r}
-sender.term.matrix.bin  = quanteda::dfm_weight(sender.term.matrix.2, scheme  = "boolean")
+sender.term.matrix.bin  = quanteda::dfm_weight(sender.term.matrix.3, scheme  = "boolean")
+#test=text2vec::sim2(sender.term.matrix.bin[1:100,], method = "jaccard")
+#A=Matrix::tcrossprod(sender.term.matrix.bin[1:100,])
+#im <- which((A > 0), arr.ind=TRUE, useNames = F)
+
+bin_simil_members=text2vec::sim2(sender.term.matrix.bin, method = "jaccard", norm = "none")
+
+#bin_simil_members=jaccard_similarity(sender.term.matrix.bin[1:100,])
 #compute similarities between members
-bin_simil_members=proxy::simil(x=as.matrix(sender.term.matrix.bin), by_rows=T, method="Jaccard", convert_distances = FALSE, diag = T)
+#bin_simil_members=proxy::simil(x=as.matrix(sender.term.matrix.bin), by_rows=T, method="Jaccard", convert_distances = FALSE, diag = T)
 #View(as.matrix(bin_simil_members))
 bin_simil_members=as.matrix(bin_simil_members)
+
+```
+###save
+```{r}
 save(bin_simil_members, file = "enron.binary.sim.model.rds")
 
 ```
+
+##Normalised Frequency modeling
+
+```{r}
+sender.term.matrix.prop=quanteda::dfm_weight(sender.term.matrix.3, scheme  = "prop")
+
+
+prop.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", norm="none")%>% as.matrix(.)
+
+#prop.simil.member=proxy::simil(., by_rows=T, method="cosine", convert_distances = FALSE, diag = T)#%>% as.matrix(.) 
+```
+###Save
+```{r}
+save(prop.simil.member, file="enron.prop.sim.member.rds")
+```
+
+
+##TF-IDF modeling
+```{r}
+sender.term.matrix.prop  = quanteda::dfm_tfidf(sender.term.matrix.3, scheme_tf  = "prop", scheme_df="inverseprob")
+
+tfidf.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", norm="none")%>% as.matrix(.)
+
+```
+
+###save
+```{r}
+save(tfidf.simil.member, file="enron.tfidf.sim.member.rds")
+```
+
+
+##LDA-based topic modeling
+used the word2vec package
+http://text2vec.org/topic_modeling.html#latent_dirichlet_allocation
+```{r}
+#dtm = create_dtm(it, vectorizer, type = "dgTMatrix")
+
+lda_model.01 = text2vec::LDA$new(n_topics = 200, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+
+lda_model.k100.01 = text2vec::LDA$new(n_topics = 100, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+
+
+doc_topic_distr = lda_model.k100.01$fit_transform(x = sender.term.matrix.3, n_iter = 1000, convergence_tol = 0.001, n_check_convergence = 10, progressbar = FALSE)
+```
+
+
+###Look at top word
+```{r}
+lda_model$get_top_words(n = 10, topic_number = c(1:10), lambda = 1)
+```
+
+```{r}
+lda_model$plot()
+lda_model.01$plot()
+lda_model.k100.01$plot()
+```
+
+##Build message*term matrix
+```{r}
+#need to encode as quanteda's tokens format before building the matrix
+message.term.matrix = quanteda::dfm(x=as.tokens(content.enron$clean.content.token), tolower=FALSE)
+
+print(c("vocabulary size:" ))
+length(message.term.matrix@Dimnames$features)
+
+message.term.matrix.filtered=quanteda::dfm_trim(x=message.term.matrix, min_docfreq = 75, max_docfreq = length(message.term.matrix@Dimnames$features)*.5, docfreq_type="count")
+print(c("vocabulary size:" ))
+length(message.term.matrix.filtered@Dimnames$features)
+
+#add dummy feature to avoid empty vector
+message.term.matrix.filtered=data.frame(dummy.feature=c(rep(1, nrow(message.term.matrix.filtered))))%>%as.matrix(.)%>%cbind(., message.term.matrix.filtered)%>%as.dfm(.)
+```
+
+##LDA-based topic modeling
+used the word2vec package
+http://text2vec.org/topic_modeling.html#latent_dirichlet_allocation
+```{r}
+lda.model.message.k100 = text2vec::LDA$new(n_topics = 100, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+
+message.topic.distr = lda.model.message.k100$fit_transform(x = message.term.matrix.filtered, n_iter = 1000, convergence_tol = 0.001, n_check_convergence = 10, progressbar = FALSE)
+```
+
+```{r}
+#aggragate context by member
+matrixMemberTopic = quanteda::dfm_group(as.dfm(message.topic.distr), groups = verbatimDataSet$Membre)
+
+```
+
+
 
