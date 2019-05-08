@@ -18,6 +18,26 @@ library(quanteda)
 quanteda::quanteda_options("threads" = 6)
 library(data.table)
 library(proxy)
+library(text2vec)
+
+```
+
+#functions
+```{r}
+#function to create a unit normed vector
+normVector <- function(x) 
+{
+  if(sum(x)==0)
+    return (x)
+  else 
+    return (x / sqrt(sum(x^2)))
+  
+}
+#function to norm many vectors
+normRowVectors<-function(m){
+  t(apply(m, MARGIN = 1, FUN = function(x) normVector(x)))
+}
+
 
 ```
 
@@ -30,17 +50,6 @@ interaction.enron=readRDS("interaction.enron.rds")
 ```
 
 #Aggregate contents by sender 
-```{r}
-# idContentBySender=stats::aggregate(interaction.enron, by=list(interaction.enron$id.sender), FUN=function(x){unique(c(x))}) 
-# #%>%set_colnames(c("id.sender", "list.idContent"))
-# 
-# tokensBySender=lapply(idContentBySender$id.content, function(l){
-#   
-#   c(content.enron$clean.content.token[unlist(l)])%>%unlist(.)
-# })
-
-
-```
 
 ```{r}
 map.content.sender=unique(interaction.enron[,1:2])
@@ -91,43 +100,26 @@ sender.term.matrix.2@Dimnames$docs=idContentBySender$id.sender
 ##get non-empty context vector
 empty vector can not be used in some semantic model. Therefore they must be filtered out
 ```{r}
-nonEmptyVectors = apply(X = as.matrix(sender.term.matrix.2), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
-
-print(paste("how many empty vectors: ", length(sender.term.matrix.2@Dimnames$docs[!nonEmptyVectors])))
+# nonEmptyVectors = apply(X = as.matrix(sender.term.matrix.2), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
+# 
+# print(paste("how many empty vectors: ", length(sender.term.matrix.2@Dimnames$docs[!nonEmptyVectors])))
 
 ```
 
 ##Add dummy
 if the matrix has empty vectors, add un dummy variable
 ```{r}
-dummy=data.frame(dummy.feature=c(rep(1, nrow(sender.term.matrix.2))))
-
-sender.term.matrix.3=sender.term.matrix.2%>%as.matrix(.)%>%cbind(., dummy)%>%as.dfm(.)
-
-nonEmptyVectors.3 = apply(X = as.matrix(sender.term.matrix.3), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
-print(paste("how many non empty vectors: ", nrow(sender.term.matrix.3[nonEmptyVectors.3,])))
+# dummy=data.frame(dummy.feature=c(rep(1, nrow(sender.term.matrix.2))))
+# 
+# sender.term.matrix.3=sender.term.matrix.2%>%as.matrix(.)%>%cbind(., dummy)%>%as.dfm(.)
+# 
+# nonEmptyVectors.3 = apply(X = as.matrix(sender.term.matrix.3), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0)
+# print(paste("how many non empty vectors: ", nrow(sender.term.matrix.3[nonEmptyVectors.3,])))
 
 ```
 
 
 #Explicit Semantic Modeling
-
-<!-- ##Function for Jaccard -->
-<!-- ```{r} -->
-<!-- jaccard_similarity <- function(m) { -->
-<!--   A <- Matrix::tcrossprod(m) -->
-<!--   im <- which(A > 0, arr.ind=TRUE, useNames = F) -->
-<!--   b <- rowSums(m) -->
-<!--   Aim <- A[im] -->
-<!--   sparseMatrix( -->
-<!--     i = im[,1], -->
-<!--     j = im[,2], -->
-<!--     x = Aim / (b[im[,1]] + b[im[,2]] - Aim), -->
-<!--     dims = dim(A) -->
-<!--   ) -->
-<!-- } -->
-
-<!-- ``` -->
 
 
 ##Binary similarity modeling
@@ -136,17 +128,9 @@ use sim2 from text2vec. The fastest similarity computation found so far.
 Much more faster than the package proxy
 
 ```{r}
-sender.term.matrix.bin  = quanteda::dfm_weight(sender.term.matrix.3, scheme  = "boolean")
-#test=text2vec::sim2(sender.term.matrix.bin[1:100,], method = "jaccard")
-#A=Matrix::tcrossprod(sender.term.matrix.bin[1:100,])
-#im <- which((A > 0), arr.ind=TRUE, useNames = F)
-
+sender.term.matrix.bin  = quanteda::dfm_weight(sender.term.matrix.2, scheme  = "boolean")
 bin_simil_members=text2vec::sim2(sender.term.matrix.bin, method = "jaccard", norm = "none")
 
-#bin_simil_members=jaccard_similarity(sender.term.matrix.bin[1:100,])
-#compute similarities between members
-#bin_simil_members=proxy::simil(x=as.matrix(sender.term.matrix.bin), by_rows=T, method="Jaccard", convert_distances = FALSE, diag = T)
-#View(as.matrix(bin_simil_members))
 bin_simil_members=as.matrix(bin_simil_members)
 
 ```
@@ -159,12 +143,10 @@ save(bin_simil_members, file = "enron.binary.sim.model.rds")
 ##Normalised Frequency modeling
 
 ```{r}
-sender.term.matrix.prop=quanteda::dfm_weight(sender.term.matrix.3, scheme  = "prop")
-
+sender.term.matrix.prop=quanteda::dfm_weight(sender.term.matrix.2, scheme  = "prop")
 
 prop.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", norm="none")%>% as.matrix(.)
 
-#prop.simil.member=proxy::simil(., by_rows=T, method="cosine", convert_distances = FALSE, diag = T)#%>% as.matrix(.) 
 ```
 ###Save
 ```{r}
@@ -174,7 +156,7 @@ save(prop.simil.member, file="enron.prop.sim.member.rds")
 
 ##TF-IDF modeling
 ```{r}
-sender.term.matrix.prop  = quanteda::dfm_tfidf(sender.term.matrix.3, scheme_tf  = "prop", scheme_df="inverseprob")
+sender.term.matrix.prop  = quanteda::dfm_tfidf(sender.term.matrix.2, scheme_tf  = "prop", scheme_df="inverseprob")
 
 tfidf.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", norm="none")%>% as.matrix(.)
 
@@ -185,34 +167,11 @@ tfidf.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", no
 save(tfidf.simil.member, file="enron.tfidf.sim.member.rds")
 ```
 
+#Latent Semantic Modeling 
 
-##LDA-based topic modeling
-used the word2vec package
-http://text2vec.org/topic_modeling.html#latent_dirichlet_allocation
-```{r}
-#dtm = create_dtm(it, vectorizer, type = "dgTMatrix")
-
-lda_model.01 = text2vec::LDA$new(n_topics = 200, doc_topic_prior = 0.1, topic_word_prior = 0.01)
-
-lda_model.k100.01 = text2vec::LDA$new(n_topics = 100, doc_topic_prior = 0.1, topic_word_prior = 0.01)
-
-
-doc_topic_distr = lda_model.k100.01$fit_transform(x = sender.term.matrix.3, n_iter = 1000, convergence_tol = 0.001, n_check_convergence = 10, progressbar = FALSE)
-```
-
-
-###Look at top word
-```{r}
-lda_model$get_top_words(n = 10, topic_number = c(1:10), lambda = 1)
-```
-
-```{r}
-lda_model$plot()
-lda_model.01$plot()
-lda_model.k100.01$plot()
-```
 
 ##Build message*term matrix
+Latent models are build with a segment*term matrix. The model is then aggregated by sender. For example, the topic distribution of a every text segments sended by a agent will be averaged. Same thing for LSA 
 ```{r}
 #need to encode as quanteda's tokens format before building the matrix
 message.term.matrix = quanteda::dfm(x=as.tokens(content.enron$clean.content.token), tolower=FALSE)
@@ -220,28 +179,147 @@ message.term.matrix = quanteda::dfm(x=as.tokens(content.enron$clean.content.toke
 print(c("vocabulary size:" ))
 length(message.term.matrix@Dimnames$features)
 
-message.term.matrix.filtered=quanteda::dfm_trim(x=message.term.matrix, min_docfreq = 75, max_docfreq = length(message.term.matrix@Dimnames$features)*.5, docfreq_type="count")
+message.term.matrix.filtered=quanteda::dfm_trim(x=message.term.matrix, min_docfreq = 75, max_docfreq = length(message.term.matrix@Dimnames$features)*.3, docfreq_type="count")
+
+#message.term.matrix.filtered.withEmpty=quanteda::dfm_trim(x=message.term.matrix, min_docfreq = 75, max_docfreq = length(message.term.matrix@Dimnames$features)*.5, docfreq_type="count")
+
 print(c("vocabulary size:" ))
 length(message.term.matrix.filtered@Dimnames$features)
 
 #add dummy feature to avoid empty vector
-message.term.matrix.filtered=data.frame(dummy.feature=c(rep(1, nrow(message.term.matrix.filtered))))%>%as.matrix(.)%>%cbind(., message.term.matrix.filtered)%>%as.dfm(.)
+# message.term.matrix.filtered=data.frame(dummy.feature=c(rep(1, nrow(message.term.matrix.filtered))))%>%as.matrix(.)%>%cbind(., message.term.matrix.filtered)%>%as.dfm(.)
 ```
+
+
 
 ##LDA-based topic modeling
 used the word2vec package
 http://text2vec.org/topic_modeling.html#latent_dirichlet_allocation
-```{r}
-lda.model.message.k100 = text2vec::LDA$new(n_topics = 100, doc_topic_prior = 0.1, topic_word_prior = 0.01)
+Compared to the "topicmodels" package, text2vec LDA is much more faster 
 
-message.topic.distr = lda.model.message.k100$fit_transform(x = message.term.matrix.filtered, n_iter = 1000, convergence_tol = 0.001, n_check_convergence = 10, progressbar = FALSE)
+Note that the text2vec LDA can handle empty vectors (after word filtering) while the topicmodels version can not.
+After many trials, doc_topic_prior = 0.1 and topic_word_prior = 0.01 seems to be a good educated guess for parameters estimations, but cross-validation should done to be sure. 
+```{r}
+#version with empty vectors
+lda.model.message.k100.tp001 = text2vec::LDA$new(n_topics = 100, doc_topic_prior = 0.1, topic_word_prior = 0.001)
+
+message.topic.distr = lda.model.message.k100.tp001$fit_transform(x = message.term.matrix.filtered, n_iter = 1000, convergence_tol = 0.001, n_check_convergence = 10, progressbar = FALSE)
+
 ```
 
+###save 
 ```{r}
-#aggragate context by member
-matrixMemberTopic = quanteda::dfm_group(as.dfm(message.topic.distr), groups = verbatimDataSet$Membre)
-
+saveRDS(message.topic.distr, "message.topic.distr.rds")
+saveRDS(lda.model.message.k100.tp001, "lda.model.message.k100.tp001.rds")
+```
+###plot topics
+use the LDAvis' method
+```{r}
+lda.model.message.k100.tp001$plot()
 ```
 
 
+##aggregate topic distribution by senders
+```{r}
+agg.topic.distr.BySender=stats::aggregate(message.topic.distr, by=list(map.content.sender$id.sender), mean) 
 
+```
+
+###save 
+```{r}
+saveRDS(agg.topic.distr.BySender, "LDA.agg.topic.distr.BySender.rds")
+```
+
+##Similarity calculation
+do not keep the first colum, as it corresponds to the id.senders
+```{r}
+lda_simil_members=text2vec::sim2(as.matrix(agg.topic.distr.BySender[,2:ncol(agg.topic.distr.BySender)]), method = "cosine", norm = "none")
+```
+
+###save
+```{r}
+save(lda_simil_members, file="enron.lda.sim.member.rds")
+```
+
+
+##LSA-based topic modeling
+```{r}
+set.seed(1)
+
+mySVD=irlba::irlba(message.term.matrix.filtered%>%dfm_weight(x=., scheme="prop"), 100, tol=1e-5)
+
+latentNormedMessageSpace = as.matrix(mySVD$u %*% solve(diag((mySVD$d)))) %>% normRowVectors()
+
+```
+###save
+```{r}
+saveRDS(mySVD, "lsa.model.message.k100.rds")
+```
+
+##aggregate topic distribution by senders
+```{r}
+agg.latentDim.BySender=stats::aggregate(latentNormedMessageSpace, by=list(map.content.sender$id.sender), mean) 
+
+```
+
+###save 
+```{r}
+saveRDS(agg.latentDim.BySender, "LSA.agg.latentDim.distr.BySender.rds")
+```
+
+##Similarity calculation
+```{r}
+lsa_simil_members=text2vec::sim2(as.matrix(agg.latentDim.BySender[,2:ncol(agg.latentDim.BySender)]), method = "cosine", norm = "none")
+```
+
+###save
+```{r}
+save(lsa_simil_members, file="enron.lsa.sim.member.rds")
+```
+
+<!-- ##NNMF-based topic modeling -->
+<!-- non-negative matrix factorization k=100 -->
+<!-- nnmf does not work if there is empty vectors, so we need to add a dummy feature  -->
+
+<!-- ```{r} -->
+<!-- library(nnTensor) -->
+<!-- nnmf.model=nnTensor::NMF(message.term.matrix.filtered.wd[1:1000,]%>%dfm_weight(x=., scheme="prop")%>%as.matrix(.), J = 100) -->
+
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- library(NMF) -->
+
+<!-- dummy=c(dummy.feature=c(rep(0.0001, nrow(message.term.matrix.filtered)))) -->
+
+<!-- message.term.matrix.filtered.wd=message.term.matrix.filtered%>%Matrix::cBind(., dummy)%>%as.dfm(.) -->
+
+<!-- set.seed(12345) -->
+
+<!-- #init <- NMF::nmfModel(k, matrixContextWordNorme, W=t(kmeansModelOnCol$centers), H=kmeansModelOnRow$centers) -->
+
+<!-- nnmf.model.snmf = NMF::nmf(message.term.matrix.filtered.wd[1:1000,]%>%dfm_weight(x=., scheme="prop") %>% as.matrix(.), rank=100, method = "brunet", .options=list('v'=T, 'P'=T), seed=1) -->
+
+
+<!-- #calculs des similarités avec la métrique du cosinus entre mots et mixture coefficient -->
+<!-- simil_Mot_mixtureCoefficient=proxy::simil(x=t(matrixContextWordNorme), y = t(basis(nonNegResult)), by_rows=T, method="cosine", convert_distances = FALSE) -->
+
+
+<!-- #Afficher résultats -->
+<!-- View(k_plus_important_mot_par_topic(15, simil_Mot_mixtureCoefficient), title = "Proximités entre mots et axes dans un modèle NMF") -->
+
+<!-- ``` -->
+
+
+<!-- ##Add dummy -->
+<!-- if the matrix has empty vectors, add un dummy variable -->
+<!-- ```{r} -->
+<!-- dummy=data.frame(dummy.feature=c(rep(1, nrow(sender.term.matrix.2)))) -->
+
+<!-- sender.term.matrix.3=sender.term.matrix.2%>%as.matrix(.)%>%cbind(., dummy)%>%as.dfm(.) -->
+
+<!-- nonEmptyVectors.3 = apply(X = as.matrix(sender.term.matrix.3), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0) -->
+<!-- print(paste("how many non empty vectors: ", nrow(sender.term.matrix.3[nonEmptyVectors.3,]))) -->
+
+<!-- ``` -->
