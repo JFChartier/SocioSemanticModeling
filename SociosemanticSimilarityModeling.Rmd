@@ -49,7 +49,7 @@ content.enron=readRDS("content.enron.rds")
 interaction.enron=readRDS("interaction.enron.rds")  
 ```
 
-#Aggregate contents by sender 
+#Aggregate messages by sender 
 
 ```{r}
 map.content.sender=unique(interaction.enron[,1:2])
@@ -136,7 +136,7 @@ bin_simil_members=as.matrix(bin_simil_members)
 ```
 ###save
 ```{r}
-save(bin_simil_members, file = "enron.binary.sim.model.rds")
+saveRDS(bin_simil_members, file = "enron.binary.sim.model.rds")
 
 ```
 
@@ -150,7 +150,7 @@ prop.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", nor
 ```
 ###Save
 ```{r}
-save(prop.simil.member, file="enron.prop.sim.member.rds")
+saveRDS(prop.simil.member, file="enron.prop.sim.member.rds")
 ```
 
 
@@ -164,7 +164,7 @@ tfidf.simil.member=text2vec::sim2(sender.term.matrix.prop, method = "cosine", no
 
 ###save
 ```{r}
-save(tfidf.simil.member, file="enron.tfidf.sim.member.rds")
+saveRDS(tfidf.simil.member, file="enron.tfidf.sim.member.rds")
 ```
 
 #Latent Semantic Modeling 
@@ -238,7 +238,7 @@ lda_simil_members=text2vec::sim2(as.matrix(agg.topic.distr.BySender[,2:ncol(agg.
 
 ###save
 ```{r}
-save(lda_simil_members, file="enron.lda.sim.member.rds")
+saveRDS(lda_simil_members, file="enron.lda.sim.member.rds")
 ```
 
 
@@ -274,52 +274,26 @@ lsa_simil_members=text2vec::sim2(as.matrix(agg.latentDim.BySender[,2:ncol(agg.la
 
 ###save
 ```{r}
-save(lsa_simil_members, file="enron.lsa.sim.member.rds")
+saveRDS(lsa_simil_members, file="enron.lsa.sim.member.rds")
 ```
 
-<!-- ##NNMF-based topic modeling -->
-<!-- non-negative matrix factorization k=100 -->
-<!-- nnmf does not work if there is empty vectors, so we need to add a dummy feature  -->
+##NNMF-based topic modeling
+non-negative matrix factorization k=100
+nnmf does not work if there is empty vectors, so we need to add a dummy feature
 
-<!-- ```{r} -->
-<!-- library(nnTensor) -->
-<!-- nnmf.model=nnTensor::NMF(message.term.matrix.filtered.wd[1:1000,]%>%dfm_weight(x=., scheme="prop")%>%as.matrix(.), J = 100) -->
-
-<!-- ``` -->
-
-
-<!-- ```{r} -->
-<!-- library(NMF) -->
-
-<!-- dummy=c(dummy.feature=c(rep(0.0001, nrow(message.term.matrix.filtered)))) -->
-
-<!-- message.term.matrix.filtered.wd=message.term.matrix.filtered%>%Matrix::cBind(., dummy)%>%as.dfm(.) -->
-
-<!-- set.seed(12345) -->
-
-<!-- #init <- NMF::nmfModel(k, matrixContextWordNorme, W=t(kmeansModelOnCol$centers), H=kmeansModelOnRow$centers) -->
-
-<!-- nnmf.model.snmf = NMF::nmf(message.term.matrix.filtered.wd[1:1000,]%>%dfm_weight(x=., scheme="prop") %>% as.matrix(.), rank=100, method = "brunet", .options=list('v'=T, 'P'=T), seed=1) -->
+2 libraries were tested. The 2 were super slow. NMF does not take sparse matrix, and a dense matrix is too large for a normal computer. nnTensor seems like a good alternative, but is also very slow. So far, no successfull solution has been found.
+```{r}
+# library(nnTensor)
+# nnmf.model=nnTensor::NMF(message.term.matrix.filtered%>%dfm_weight(x=., scheme="prop"), J = 100)
+# 
+# library(NMF)
+# dummy=c(dummy.feature=c(rep(1, nrow(message.term.matrix.filtered))))
+# 
+# message.term.matrix.filtered.wd=message.term.matrix.filtered%>%Matrix::cBind(., dummy)%>%as.dfm(.)
+# 
+# #i0 <- which(colSums(message.term.matrix.filtered.wd) == 0)
+# 
+# nnmf.model.2=NMF::nmf(message.term.matrix.filtered.wd[1:100,]%>%dfm_weight(x=., scheme="prop") %>% as.matrix(.), rank=2, method = "brunet", .options=list('v'=T, 'P'=T), seed=12345)
+```
 
 
-<!-- #calculs des similarités avec la métrique du cosinus entre mots et mixture coefficient -->
-<!-- simil_Mot_mixtureCoefficient=proxy::simil(x=t(matrixContextWordNorme), y = t(basis(nonNegResult)), by_rows=T, method="cosine", convert_distances = FALSE) -->
-
-
-<!-- #Afficher résultats -->
-<!-- View(k_plus_important_mot_par_topic(15, simil_Mot_mixtureCoefficient), title = "Proximités entre mots et axes dans un modèle NMF") -->
-
-<!-- ``` -->
-
-
-<!-- ##Add dummy -->
-<!-- if the matrix has empty vectors, add un dummy variable -->
-<!-- ```{r} -->
-<!-- dummy=data.frame(dummy.feature=c(rep(1, nrow(sender.term.matrix.2)))) -->
-
-<!-- sender.term.matrix.3=sender.term.matrix.2%>%as.matrix(.)%>%cbind(., dummy)%>%as.dfm(.) -->
-
-<!-- nonEmptyVectors.3 = apply(X = as.matrix(sender.term.matrix.3), MARGIN = 1, FUN = function(x) sqrt(sum(x^2))>0) -->
-<!-- print(paste("how many non empty vectors: ", nrow(sender.term.matrix.3[nonEmptyVectors.3,]))) -->
-
-<!-- ``` -->
