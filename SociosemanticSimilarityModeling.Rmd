@@ -233,7 +233,8 @@ saveRDS(agg.topic.distr.BySender, "LDA.agg.topic.distr.BySender.rds")
 ##Similarity calculation
 do not keep the first colum, as it corresponds to the id.senders
 ```{r}
-lda_simil_members=text2vec::sim2(as.matrix(agg.topic.distr.BySender[,2:ncol(agg.topic.distr.BySender)]), method = "cosine", norm = "none")
+agg.topic.distr.BySender=readRDS("LDA.agg.topic.distr.BySender.rds")
+lda_simil_members=text2vec::sim2(as.matrix(agg.topic.distr.BySender[,2:ncol(agg.topic.distr.BySender)]), method = "cosine", norm = "none")%>% set_rownames(agg.topic.distr.BySender$Group.1) %>% set_colnames(agg.topic.distr.BySender$Group.1)
 ```
 
 ###save
@@ -269,7 +270,8 @@ saveRDS(agg.latentDim.BySender, "LSA.agg.latentDim.distr.BySender.rds")
 
 ##Similarity calculation
 ```{r}
-lsa_simil_members=text2vec::sim2(as.matrix(agg.latentDim.BySender[,2:ncol(agg.latentDim.BySender)]), method = "cosine", norm = "none")
+#agg.latentDim.BySender=readRDS("LSA.agg.latentDim.distr.BySender.rds")
+lsa_simil_members=text2vec::sim2(as.matrix(agg.latentDim.BySender[,2:ncol(agg.latentDim.BySender)]), method = "cosine", norm = "none") %>% set_rownames(agg.latentDim.BySender$Group.1) %>% set_colnames(agg.latentDim.BySender$Group.1)
 ```
 
 ###save
